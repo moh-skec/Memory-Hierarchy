@@ -5,6 +5,9 @@ from memory_hierarchy import CacheMemory, MainMemory, ExternalMemory
 from simulation import MemoryAccessSimulation
 from performance_analysis import PerformanceAnalysis
 from cache_policies import LRU, FIFO, Random, MRU, SecondChance, LFU
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 class MemoryHierarchySimulatorUI:
@@ -94,6 +97,8 @@ class MemoryHierarchySimulatorUI:
             self.memory_hierarchy[1])
         self.memory_hierarchy[2].replacement_policy = policy_map[policies[2]](
             self.memory_hierarchy[2])
+
+        logging.debug(f"Running simulation with: cache_sizes={cache_sizes}, policies={policies}, pattern={pattern}, count={count}")
 
         addresses = self.simulator.generate_accesses(pattern, count)
         results = self.simulator.run_simulation(addresses)

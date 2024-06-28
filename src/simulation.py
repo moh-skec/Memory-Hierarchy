@@ -1,4 +1,9 @@
+# src/simulation.py
 import random
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 
 class MemoryAccessSimulation:
     def __init__(self, memory_hierarchy):
@@ -9,7 +14,9 @@ class MemoryAccessSimulation:
         if pattern == "sequential":
             addresses = list(range(count))
         elif pattern == "random":
-            addresses = [random.randint(0, self.memory_hierarchy[-1].size) for _ in range(count)]
+            addresses = [random.randint(
+                0, self.memory_hierarchy[-1].size) for _ in range(count)]
+        logging.debug(f"Generated Accesses: {addresses}")
         return addresses
 
     def run_simulation(self, addresses):
@@ -20,8 +27,9 @@ class MemoryAccessSimulation:
                 results["access_times"].append(access_time)
                 if hit:
                     results["hits"] += 1
+                    logging.debug(f"Address {address} Hit in {level.name}")
                     break
             else:
                 results["misses"] += 1
+                logging.debug(f"Address {address} Missed in All Levels")
         return results
-

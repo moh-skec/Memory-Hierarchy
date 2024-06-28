@@ -1,3 +1,9 @@
+# src/memory_hierarchy.py
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+
 class MemoryLevel:
     def __init__(self, name, size, access_speed):
         self.name = name
@@ -7,7 +13,9 @@ class MemoryLevel:
         self.access_count = 0
 
     def access(self, address):
-        raise NotImplementedError("This method should be implemented by subclasses")
+        raise NotImplementedError(
+            "This method should be implemented by subclasses")
+
 
 class CacheMemory(MemoryLevel):
     def __init__(self, name, size, access_speed, replacement_policy, lower_level=None):
@@ -20,6 +28,7 @@ class CacheMemory(MemoryLevel):
         self.access_count += 1
         if address in self.cache:
             self.replacement_policy.hit(address)
+            logging.debug(f"Cache Hit: {address} in {self.name}")
             return self.cache[address], True, self.access_speed
         else:
             if len(self.cache) >= self.size:
@@ -27,7 +36,9 @@ class CacheMemory(MemoryLevel):
             _, _, lower_access_speed = self.lower_level.access(address)
             self.cache[address] = f"Data at {address}"
             self.replacement_policy.miss(address)
+            logging.debug(f"Cache Miss: {address} in {self.name}")
             return self.cache[address], False, self.access_speed + lower_access_speed
+
 
 class MainMemory(MemoryLevel):
     def __init__(self, name, size, access_speed, lower_level=None):
@@ -37,6 +48,7 @@ class MainMemory(MemoryLevel):
     def access(self, address):
         self.access_count += 1
         if address in self.data:
+            logging.debug(f"MainMemory Hit: {address}")
             return self.data[address], True, self.access_speed
         else:
             if self.lower_level:
@@ -44,14 +56,17 @@ class MainMemory(MemoryLevel):
             else:
                 lower_access_speed = 0
             self.data[address] = f"Data at {address}"
+            logging.debug(f"MainMemory Miss: {address}")
             return self.data[address], False, self.access_speed + lower_access_speed
+
 
 class ExternalMemory(MemoryLevel):
     def access(self, address):
         self.access_count += 1
         if address in self.data:
+            logging.debug(f"ExternalMemory Hit: {address}")
             return self.data[address], True, self.access_speed
         else:
             self.data[address] = f"Data at {address}"
+            logging.debug(f"ExternalMemory Miss: {address}")
             return self.data[address], False, self.access_speed
-
