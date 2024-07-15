@@ -1,10 +1,5 @@
 # src/cache_policies.py
-from collections import OrderedDict, deque
-import heapq
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-
+from collections import defaultdict, OrderedDict
 
 class ReplacementPolicy:
     def __init__(self, cache):
@@ -28,36 +23,32 @@ class LRU(ReplacementPolicy):
     def hit(self, address):
         if address in self.order:
             self.order.move_to_end(address)
-            logging.debug(f"LRU Hit: {address}")
+            self.cache.cache = self.order
 
     def miss(self, address):
         self.order[address] = None
-        logging.debug(f"LRU Miss: {address}")
 
     def evict(self):
         if self.order:
             oldest = self.order.popitem(last=False)
-            del self.cache.cache[oldest[0]]
-            logging.debug(f"LRU Evict: {oldest[0]}")
+            return oldest[0]
 
 
 class FIFO(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = deque()
+        self.order = OrderedDict()
 
     def hit(self, address):
         pass  # No action needed for FIFO on hit
 
     def miss(self, address):
-        self.order.append(address)
-        logging.debug(f"FIFO Miss: {address}")
+        self.order[address] = None
 
     def evict(self):
         if self.order:
-            oldest = self.order.popleft()
-            del self.cache.cache[oldest]
-            logging.debug(f"FIFO Evict: {oldest}")
+            oldest = self.order.popitem(last=False)
+            return oldest[0]
 
 
 class Random(ReplacementPolicy):
@@ -74,82 +65,108 @@ class Random(ReplacementPolicy):
         import random
         if self.cache.cache:
             to_evict = random.choice(list(self.cache.cache.keys()))
-            del self.cache.cache[to_evict]
-            logging.debug(f"Random Evict: {to_evict}")
+            return to_evict
 
 
 class MRU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = []
+        self.order = OrderedDict()
 
     def hit(self, address):
         if address in self.order:
-            self.order.remove(address)
-        self.order.append(address)
-        logging.debug(f"MRU Hit: {address}")
+            self.order.move_to_end(address)
+            self.cache.cache = self.order
 
     def miss(self, address):
-        if address not in self.order:
-            self.order.append(address)
-        logging.debug(f"MRU Miss: {address}")
+        self.order[address] = None
 
     def evict(self):
         if self.order:
-            newest = self.order.pop()
-            del self.cache.cache[newest]
-            logging.debug(f"MRU Evict: {newest}")
+            newest = self.order.popitem(last=True)
+            return newest[0]
 
 
 class SecondChance(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = deque()
-        self.reference_bits = {}
+        self.order = OrderedDict()
+        self.frequency = {}
 
     def hit(self, address):
-        self.reference_bits[address] = True
-        logging.debug(f"SecondChance Hit: {address}")
+        self.frequency[address] = True
 
     def miss(self, address):
-        self.order.append(address)
-        self.reference_bits[address] = True
-        logging.debug(f"SecondChance Miss: {address}")
+        self.order[address] = None
+        self.frequency[address] = False
+        self.cache.cache = self.order
 
     def evict(self):
         while self.order:
-            address = self.order.popleft()
-            if self.reference_bits[address]:
-                self.reference_bits[address] = False
-                self.order.append(address)
+            oldest = next(iter(self.order))
+            if self.frequency[oldest]:
+                self.order.move_to_end(oldest)
+                self.frequency[oldest] = False
             else:
-                del self.cache.cache[address]
-                del self.reference_bits[address]
-                logging.debug(f"SecondChance Evict: {address}")
-                break
+                del self.order[oldest]
+                del self.frequency[oldest]
+                return oldest
 
 
 class LFU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.frequency = {}
-        self.heap = []
+        self.frequency = {}  # Keeps track of access frequency
+        self.order = OrderedDict()
 
     def hit(self, address):
         if address in self.frequency:
             self.frequency[address] += 1
-            logging.debug(f"LFU Hit: {address}")
+        else:
+            self.frequency[address] = 1
+        self.order[address] = self.frequency[address]
 
     def miss(self, address):
         self.frequency[address] = 1
-        heapq.heappush(self.heap, (self.frequency[address], address))
-        logging.debug(f"LFU Miss: {address}")
+        self.order[address] = 1
+        self.cache.cache = self.order
 
     def evict(self):
-        while self.heap:
-            freq, address = heapq.heappop(self.heap)
-            if self.frequency.get(address) == freq:
-                del self.cache.cache[address]
-                del self.frequency[address]
-                logging.debug(f"LFU Evict: {address}")
-                break
+        if self.order:
+            # Find the item with the lowest frequency
+            min_freq = min(self.order.values())
+            for address, freq in self.order.items():
+                if freq == min_freq:
+                    # Remove the item from both frequency and order
+                    del self.order[address]
+                    del self.frequency[address]
+                    return address
+
+
+class LFRU(ReplacementPolicy):
+    def __init__(self, cache):
+        super().__init__(cache)
+        self.frequency = {}
+        self.order = OrderedDict()
+
+    def hit(self, address):
+        if address in self.frequency:
+            self.frequency[address] += 1
+        else:
+            self.frequency[address] = 1
+        self.order[address] = self.frequency[address]
+
+    def miss(self, address):
+        self.frequency[address] = 1
+        self.order[address] = 1
+        self.cache.cache = self.order
+
+    def evict(self):
+        if self.order:
+            min_freq = min(self.order.values())
+            for address, freq in self.order.items():
+                if freq == min_freq:
+                    # Remove the item from both frequency and order
+                    del self.order[address]
+                    del self.frequency[address]
+                    return address
