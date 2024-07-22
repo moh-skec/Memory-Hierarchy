@@ -1,14 +1,23 @@
 # src/cache_policies.py
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
+import random
+from math import floor, ceil
+
 
 class ReplacementPolicy:
     def __init__(self, cache):
         self.cache = cache
+        self.order = OrderedDict()
+        self.hit_address = None
+        self.miss_address = None
+        self.data = None
 
     def hit(self, address):
-        raise NotImplementedError
+        self.hit_address = address
 
-    def miss(self, address):
+    def miss(self, address, data):
+        self.data = data
+        self.miss_address = address
         raise NotImplementedError
 
     def evict(self):
@@ -18,37 +27,36 @@ class ReplacementPolicy:
 class LRU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = OrderedDict()
+        self.use = OrderedDict()
 
     def hit(self, address):
-        if address in self.order:
-            self.order.move_to_end(address)
-            self.cache.cache = self.order
+        self.use[address] += 1
 
-    def miss(self, address):
-        self.order[address] = None
+    def miss(self, address, data):
+        self.order[address] = data
+        self.use[address] = 0
+        self.cache.cache = self.order
 
     def evict(self):
-        if self.order:
-            oldest = self.order.popitem(last=False)
-            return oldest[0]
+        oldest = sorted(self.use.items(), key=lambda x: x[1])[0][0]
+        del self.use[oldest]
+        return oldest
 
 
 class FIFO(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = OrderedDict()
 
     def hit(self, address):
-        pass  # No action needed for FIFO on hit
+        return super().hit(address)
 
-    def miss(self, address):
-        self.order[address] = None
+    def miss(self, address, data):
+        self.order[address] = data
+        self.cache.cache = self.order
 
     def evict(self):
-        if self.order:
-            oldest = self.order.popitem(last=False)
-            return oldest[0]
+        oldest = self.order.popitem(last=False)[0]
+        return oldest
 
 
 class Random(ReplacementPolicy):
@@ -56,117 +64,146 @@ class Random(ReplacementPolicy):
         super().__init__(cache)
 
     def hit(self, address):
-        pass  # No action needed for Random on hit
+        return super().hit(address)
 
-    def miss(self, address):
-        pass  # No action needed for Random on miss
+    def miss(self, address, data):
+        self.order[address] = data
+        self.cache.cache = self.order
 
     def evict(self):
-        import random
-        if self.cache.cache:
-            to_evict = random.choice(list(self.cache.cache.keys()))
-            return to_evict
+        to_evict = random.choice(list(self.order.keys()))
+        return to_evict
 
 
 class MRU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = OrderedDict()
+        self.use = OrderedDict()
 
     def hit(self, address):
-        if address in self.order:
-            self.order.move_to_end(address)
-            self.cache.cache = self.order
+        self.use[address] += 1
 
-    def miss(self, address):
-        self.order[address] = None
+    def miss(self, address, data):
+        self.order[address] = data
+        self.use[address] = 0
+        self.cache.cache = self.order
 
     def evict(self):
-        if self.order:
-            newest = self.order.popitem(last=True)
-            return newest[0]
+        oldest = sorted(self.use.items(), key=lambda x: x[1])[-1][0]
+        del self.use[oldest]
+        return oldest
 
 
 class SecondChance(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.order = OrderedDict()
         self.frequency = {}
+        self.how_long = OrderedDict()
 
     def hit(self, address):
-        self.frequency[address] = True
+        self.frequency[address] = 1
+        for addr in self.how_long:
+            self.how_long[addr] += 1
 
-    def miss(self, address):
-        self.order[address] = None
-        self.frequency[address] = False
+    def miss(self, address, data):
+        self.order[address] = data
+        self.frequency[address] = 0
+        for addr in self.how_long:
+            self.how_long[addr] += 1
+        self.how_long[address] = 0
         self.cache.cache = self.order
 
     def evict(self):
-        while self.order:
-            oldest = next(iter(self.order))
-            if self.frequency[oldest]:
-                self.order.move_to_end(oldest)
-                self.frequency[oldest] = False
-            else:
-                del self.order[oldest]
-                del self.frequency[oldest]
-                return oldest
+        while True:
+            for oldest in OrderedDict(sorted(self.how_long.items(), key=lambda x: x[1], reverse=True)).keys():
+                if self.frequency[oldest]:
+                    self.frequency[oldest] = 0
+                else:
+                    del self.frequency[oldest]
+                    del self.how_long[oldest]
+                    return oldest
 
 
 class LFU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
         self.frequency = {}  # Keeps track of access frequency
-        self.order = OrderedDict()
 
     def hit(self, address):
-        if address in self.frequency:
-            self.frequency[address] += 1
-        else:
-            self.frequency[address] = 1
-        self.order[address] = self.frequency[address]
+        self.frequency[address] += 1
 
-    def miss(self, address):
+    def miss(self, address, data):
+        self.order[address] = data
         self.frequency[address] = 1
-        self.order[address] = 1
         self.cache.cache = self.order
 
     def evict(self):
-        if self.order:
-            # Find the item with the lowest frequency
-            min_freq = min(self.order.values())
-            for address, freq in self.order.items():
-                if freq == min_freq:
-                    # Remove the item from both frequency and order
-                    del self.order[address]
-                    del self.frequency[address]
-                    return address
+        # Find the item with the lowest frequency
+        min_freq = min(self.frequency.values())
+        for address, freq in self.frequency.items():
+            if freq == min_freq:
+                # Remove the item from frequency
+                del self.frequency[address]
+                return address
 
 
 class LFRU(ReplacementPolicy):
     def __init__(self, cache):
         super().__init__(cache)
-        self.frequency = {}
-        self.order = OrderedDict()
+        self.privileged_size = floor(
+            self.cache.size / self.cache.block_size / 2)
+        self.unprivileged_size = ceil(
+            self.cache.size / self.cache.block_size / 2)
+        self.privileged_cache = OrderedDict()
+        self.privileged_use = OrderedDict()
+        self.unprivileged_cache = OrderedDict()
+        self.unprivileged_frequency = {}
 
     def hit(self, address):
-        if address in self.frequency:
-            self.frequency[address] += 1
-        else:
-            self.frequency[address] = 1
-        self.order[address] = self.frequency[address]
+        if address in self.privileged_cache:
+            self.privileged_use[address] += 1
+        elif address in self.unprivileged_cache:
+            oldest = sorted(self.privileged_use.items(),
+                            key=lambda x: x[1])[-1][0]
+            privilege_data = self.privileged_cache[oldest]
+            unprivilege_data = self.unprivileged_cache[address]
 
-    def miss(self, address):
-        self.frequency[address] = 1
-        self.order[address] = 1
+            self.privileged_cache = OrderedDict([(address, unprivilege_data) if k == oldest else (
+                k, v) for k, v in self.privileged_cache.items()])
+            del self.privileged_use[oldest]
+            self.privileged_use[address] = 0
+            self.unprivileged_cache = OrderedDict([(oldest, privilege_data) if k == address else (
+                k, v) for k, v in self.unprivileged_cache.items()])
+            del self.unprivileged_frequency[address]
+            self.unprivileged_frequency[oldest] = 0
+            self.order = self.privileged_cache | self.unprivileged_cache
+            self.cache.cache = self.order
+
+    def miss(self, address, data):
+        items = list(self.order.items())
+        self.privileged_cache = OrderedDict(items[:self.privileged_size])
+        self.unprivileged_cache = OrderedDict(
+            items[self.privileged_size:self.privileged_size+self.unprivileged_size])
+        if len(self.privileged_cache) < self.privileged_size:
+            self.privileged_cache[address] = data
+            self.privileged_use[address] = 0
+        else:
+            self.unprivileged_cache[address] = data
+            self.unprivileged_frequency[address] = 0
+        self.order = self.privileged_cache | self.unprivileged_cache
         self.cache.cache = self.order
 
     def evict(self):
-        if self.order:
-            min_freq = min(self.order.values())
-            for address, freq in self.order.items():
-                if freq == min_freq:
-                    # Remove the item from both frequency and order
-                    del self.order[address]
-                    del self.frequency[address]
-                    return address
+        items = list(self.order.items())
+        self.privileged_cache = OrderedDict(items[:self.privileged_size])
+        self.unprivileged_cache = OrderedDict(
+            items[self.privileged_size:self.privileged_size+self.unprivileged_size])
+
+        # Find the item with the lowest frequency
+        min_freq = min(self.unprivileged_frequency.values())
+        for address, freq in self.unprivileged_frequency.items():
+            if freq == min_freq:
+                # Remove the item from both unprivileged frequency and cache
+                del self.unprivileged_frequency[address]
+                del self.unprivileged_cache[address]
+                return address
