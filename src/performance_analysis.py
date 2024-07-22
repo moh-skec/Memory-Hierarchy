@@ -1,26 +1,22 @@
 # src/performance_analysis.py
-import pandas as pd
 import matplotlib.pyplot as plt
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
+import pandas as pd
 
 
 class PerformanceAnalysis:
-    def __init__(self):
-        self.data = []
+    def __init__(self, simulator):
+        self.total_hits = 0
+        self.total_misses = 0
+        self.total_accesses = 0
+        self.simulator = simulator
 
-    def analyze(self, results):
-        self.data.append(results)
-        logging.debug(f"Results Analyzed: {results}")
+    def update_metrics(self, hits, misses, accesses):
+        self.total_hits += hits
+        self.total_misses += misses
+        self.total_accesses += accesses
 
-    def generate_report(self):
-        df = pd.DataFrame(self.data)
-        logging.debug(f"Generated Report: {df.describe()}")
-        return df.describe()
-
-    def visualize(self):
-        df = pd.DataFrame(self.data)
+    def visualize(self, data):
+        df = pd.DataFrame(data)
         df.plot(kind='bar')
+        plt.title('Access Resault')
         plt.show()
-        logging.debug("Visualization Created")
